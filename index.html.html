@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pokémon RNG - Biome Edition</title>
+<style>
+    :root { --primary: #ff6f61; --bg: #050505; --accent: #00ffff; --lucky: #f1c40f; }
+    body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: #eee; margin: 0; overflow: hidden; }
+    #main-ui { display: flex; padding: 20px; gap: 20px; height: 100vh; box-sizing: border-box; }
+    .glass-box { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255,255,255,0.1); padding: 15px; border-radius: 15px; backdrop-filter: blur(10px); }
+    #left-panel { width: 350px; display: flex; flex-direction: column; gap: 15px; }
+    
+    /* Lucky Event UI */
+    #lucky-event-banner {
+        position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
+        padding: 10px 30px; border-radius: 0 0 20px 20px;
+        background: rgba(241, 196, 15, 0.2); border: 1px solid var(--lucky);
+        backdrop-filter: blur(10px); z-index: 500; display: none; text-align: center;
+        box-shadow: 0 0 20px rgba(241, 196, 15, 0.3);
+    }
+    #event-announcement {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.8); z-index: 2000; display: none;
+        align-items: center; justify-content: center; font-size: 4em;
+        color: var(--lucky); font-weight: 900; text-shadow: 0 0 30px var(--lucky);
+        animation: zoomIn 0.5s ease-out;
+    }
+    @keyframes zoomIn { from { transform: scale(0.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+    .rarity-Common { color: #888; }
+    .rarity-Rare { color: #2ecc71; font-weight: bold; }
+    .rarity-Epic { color: #3498db; font-weight: bold; }
+    .rarity-Legendary { color: #f1c40f; font-weight: 900; text-shadow: 0 0 10px gold; }
+    .rarity-Mythical { color: #ff4500; font-weight: 900; text-shadow: 0 0 20px #ff4500; }
+    .rarity-Secret { color: #9b59b6; font-weight: 900; text-shadow: 0 0 30px #ff00ff; animation: pulse 1s infinite; }
+
+    .shiny-glow { filter: drop-shadow(0 0 15px gold); animation: shiny-sparkle 1s infinite alternate; }
+    .shiny-slot { border: 1px solid gold !important; background: rgba(255, 215, 0, 0.1) !important; box-shadow: inset 0 0 10px gold; }
+    .shiny-text { color: gold; font-weight: bold; text-shadow: 0 0 5px gold; font-size: 0.8em; }
+
+    #biome-banner {
+        position: fixed; top: 10px; right: 20px; padding: 10px 20px;
+        border-radius: 15px; border: 1px solid rgba(255,255,255,0.2);
+        background: rgba(0,0,0,0.6); backdrop-filter: blur(5px); z-index: 600;
+        text-align: right;
+    }
+
+    @keyframes shiny-sparkle { from { filter: drop-shadow(0 0 5px gold); } to { filter: drop-shadow(0 0 20px yellow); } }
+    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+
+    #cinematic-overlay {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: black; z-index: 1000; display: none;
+        align-items: center; justify-content: center; flex-direction: column;
+    }
+    .cine-ball { width: 150px; z-index: 1001; filter: drop-shadow(0 0 20px white); }
+    .shake-anim { animation: ball-shake 0.5s infinite; }
+    @keyframes ball-shake {
+        0% { transform: rotate(0deg); } 25% { transform: rotate(10deg); } 50% { transform: rotate(0deg); } 75% { transform: rotate(-10deg); } 100% { transform: rotate(0deg); }
+    }
+
+    #rng-display { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
+    .autosell-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 5px; }
+    .autosell-item { font-size: 0.7em; }
+    #inventory-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; overflow-y: auto; }
+    .slot { background: rgba(255,255,255,0.03); border-radius: 10px; padding: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.1); position: relative; }
+    .slot img { width: 60px; }
+    .delete-btn { position: absolute; top: 2px; right: 2px; background: red; color: white; border: none; border-radius: 50%; width: 15px; height: 15px; font-size: 10px; cursor: pointer; }
+    #roll-btn { width: 100%; padding: 20px; font-size: 1.5em; font-weight: bold; border-radius: 15px; cursor: pointer; background: white; border: none; }
+    #auto-btn { width: 100%; padding: 10px; font-weight: bold; border-radius: 10px; cursor: pointer; border: none; background: #2980b9; color: white; display: none; margin-top: 10px; }
+    #auto-btn.active { background: #e74c3c; box-shadow: 0 0 15px #e74c3c; }
+</style>
+</head>
+<body>
+
+<div id="event-announcement">LUCKY EVENT x2 LUCK!</div>
+
+<div id="lucky-event-banner">
+    <div style="font-weight: 900; color: var(--lucky); letter-spacing: 1px;">LUCKY EVENT</div>
+    <div id="lucky-timer" style="font-size: 0.9em; font-weight: bold;">10:00</div>
+</div>
+
+<div id="biome-banner">
+    <div id="biome-name" style="font-weight: bold; color: var(--accent); font-size: 1.1em;">Đang tải môi trường...</div>
+    <div id="biome-timer" style="font-size: 0.8em; color: #ccc;">00:00</div>
+</div>
+
+<div id="cinematic-overlay">
+    <div style="position: absolute; width: 100%; height: 100%; background: radial-gradient(circle, rgba(255,255,255,0.2) 0%, rgba(0,0,0,1) 60%);"></div>
+    <img id="cine-ball-img" class="cine-ball shake-anim" src="">
+    <div id="cine-question" style="font-size: 10em; color: white; font-weight: 900; z-index: 1002; display: none;">?</div>
+</div>
+
+<div id="main-ui">
+    <div id="left-panel">
+        <div class="glass-box">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h2 style="margin:0; color: #f1c40f;">💎 <span id="gem-count">0</span></h2>
+            </div>
+            <div style="font-size: 0.8em; color: #aaa; margin-top: 5px;">HLV: <span id="player-name-display">...</span></div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px;">
+                <div style="font-size: 0.85em;">🎒 Kho: <span id="slot-count">0</span>/<span id="max-slot">20</span></div>
+                <button onclick="upgradeSlots()" style="background:var(--accent); color:black; border:none; padding:4px 8px; border-radius:4px; font-size:0.7em; font-weight:bold; cursor:pointer;">+5 Ô (<span id="slot-cost-text">100</span>💎)</button>
+            </div>
+
+            <div class="glass-box" style="margin-top:10px; padding:8px;">
+                <b style="font-size: 0.7em; color: var(--primary);">AUTO SELL</b>
+                <div class="autosell-grid">
+                    <label class="autosell-item"><input type="checkbox" id="sell-Common"> Common</label>
+                    <label class="autosell-item"><input type="checkbox" id="sell-Rare"> Rare</label>
+                    <label class="autosell-item"><input type="checkbox" id="sell-Epic"> Epic</label>
+                    <label class="autosell-item"><input type="checkbox" id="sell-Legendary"> Legendary</label>
+                </div>
+            </div>
+
+            <div id="luck-stat" style="color: var(--accent); font-weight:bold; margin-top:10px; font-size: 0.9em;">Luck: 0</div>
+            <div id="shiny-stat" style="color: gold; font-weight:bold; font-size: 0.8em;">Shiny Multiplier: 1x</div>
+            <div id="total-rolls-stat" style="font-size: 0.7em; color: #888;">Tổng Roll: 0</div>
+        </div>
+
+        <div class="glass-box" style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
+            <div style="display:flex; gap:5px; margin-bottom:10px;">
+                <div class="tab" style="flex:1; text-align:center; background:rgba(255,255,255,0.1); padding:8px; cursor:pointer; border-radius:8px; font-size:0.75em;" onclick="switchTab('items')">POTIONS</div>
+                <div class="tab" style="flex:1; text-align:center; background:rgba(255,255,255,0.1); padding:8px; cursor:pointer; border-radius:8px; font-size:0.75em;" onclick="switchTab('equips')">BALLS</div>
+            </div>
+            <div id="shop-content" style="overflow-y:auto; flex:1;"></div>
+        </div>
+    </div>
+
+    <div id="rng-display">
+        <div id="rarity-text" style="height:45px; font-size: 2.2em; font-weight: 900; text-align: center;"></div>
+        <div style="height:300px; display:flex; align-items:center; justify-content:center;">
+            <img id="rolling-img" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png" style="width:80px; opacity:0.2;">
+            <img id="final-img" style="width:240px; display:none;">
+        </div>
+        <div style="width:280px; margin-top:20px;">
+            <button id="roll-btn" onclick="startRoll()">ROLL</button>
+            <button id="auto-btn" onclick="toggleAuto()">AUTO ROLL: OFF</button>
+        </div>
+    </div>
+
+    <div class="glass-box" style="width:380px; overflow-y:auto;">
+        <h3 style="margin-top:0; color:var(--primary);">KHO POKÉMON</h3>
+        <div id="inventory-grid"></div>
+    </div>
+</div>
+
+<script>
+const sfxShake = new Audio('https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3');
+const sfxReveal = new Audio('https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3');
+sfxShake.loop = true;
+
+const SECRET_LIST = ["arceus","rayquaza","zacian","kyogre","groudon","dialga","palkia","giratina","eternatus","xerneas","necrozma","solgaleo","lunala"];
+const MYTHICAL_LIST = ["mew","celebi","jirachi","deoxys","darkrai","shaymin","victini","keldeo","meloetta","genesect","diancie","hoopa","volcanion","kyurem","mewtwo"];
+const LEGENDARY_LIST = ["dragonite","salamence","metagross","garchomp","hydreigon","lucario","tyranitar"];
+
+const BIOMES = [
+    { id: 'lava', name: '🌋 Dung Nham', types: ['fire', 'fighting'], chance: 0.5 },
+    { id: 'ice', name: '❄️ Băng Giá', types: ['ice'], chance: 0.5 },
+    { id: 'jungle', name: '🌿 Rừng Rậm', types: ['grass', 'poison', 'bug', 'flying'], chance: 0.5 },
+    { id: 'ocean', name: '🌊 Biển Cả', types: ['water'], chance: 0.5 },
+    { id: 'null', name: '⚪ Vùng Trống', types: ['normal'], chance: 0.5 },
+    { id: 'cave', name: '🪨 Hang Động', types: ['rock', 'ground', 'steel'], chance: 0.5 },
+    { id: 'graveyard', name: '👻 Nghĩa Địa', types: ['psychic', 'dark', 'ghost'], chance: 0.5 },
+    { id: 'thunder', name: '⚡ Sấm Sét', types: ['electric'], chance: 0.5 },
+    { id: 'space', name: '🌌 Vũ Trụ', types: ['dragon', 'fairy'], chance: 0.01 }
+];
+
+// Cập nhật giá x2
+const ITEMS = [
+    { id: 'l1', name: 'Luck Potion', price: 2000, luck: 50, dur: 300 },
+    { id: 'l2', name: 'Super Luck', price: 6000, luck: 100, dur: 300 },
+    { id: 's1', name: 'Shiny Potion', price: 30000, shinyMulti: 2, dur: 300 },
+    { id: 'h1', name: 'Hyper Luck', price: 100000, luck: 1000, dur: 300 },
+    { id: 'g1', name: 'God Luck', price: 200000, luck: 10000, charges: 1 }
+];
+
+const EQUIPS = [
+    { id: 'poke', name: 'Pokeball', price: 0, luck: 50, img: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png" },
+    { id: 'great', name: 'Greatball', price: 4000, luck: 150, img: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/great-ball.png" },
+    { id: 'ultra', name: 'Ultraball', price: 100000, luck: 500, img: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/ultra-ball.png" },
+    { id: 'master', name: 'Masterball', price: 1000000, luck: 1000, img: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/master-ball.png" }
+];
+
+let inventory=[], gems=0, maxSlots=20, slotCost=100, rolling=false;
+let activeEquip='poke', ownedEquips=['poke'], activeBuffs=[], godCharges=0, totalRolls=0, autoRollActive=false, shopTab='items';
+let currentBiome = BIOMES[4], biomeEndTime = 0;
+let isLuckyEvent = false, playerName = "";
+
+function syncBiome() {
+    const cycleTime = 600000;
+    const now = Date.now();
+    const cycleIndex = Math.floor(now / cycleTime);
+    let seed = cycleIndex;
+    const pseudoRandom = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+    const totalChance = BIOMES.reduce((s, b) => s + b.chance, 0);
+    let r = pseudoRandom() * totalChance;
+    for (let b of BIOMES) { if (r < b.chance) { currentBiome = b; break; } r -= b.chance; }
+    biomeEndTime = (cycleIndex + 1) * cycleTime;
+    document.getElementById('biome-name').textContent = currentBiome.name;
+}
+
+function checkLuckyEvent() {
+    const now = new Date();
+    const isNowLucky = (now.getHours() % 2 === 0 && now.getMinutes() < 10);
+    if (isNowLucky && !isLuckyEvent) { isLuckyEvent = true; showLuckyAnnouncement(); } 
+    else if (!isNowLucky && isLuckyEvent) { isLuckyEvent = false; document.getElementById('lucky-event-banner').style.display = 'none'; }
+    if (isLuckyEvent) {
+        document.getElementById('lucky-event-banner').style.display = 'block';
+        const remainMin = 9 - now.getMinutes();
+        const remainSec = 59 - now.getSeconds();
+        document.getElementById('lucky-timer').textContent = `${remainMin.toString().padStart(2,'0')}:${remainSec.toString().padStart(2,'0')}`;
+    }
+}
+
+function showLuckyAnnouncement() {
+    const ann = document.getElementById('event-announcement');
+    ann.style.display = 'flex'; setTimeout(() => { ann.style.display = 'none'; }, 2000);
+}
+
+async function startRoll() {
+    if(rolling) return;
+    if(inventory.length >= maxSlots && !anyAutoSellChecked()) { autoRollActive = false; updateUI(); alert("Kho đầy!"); return; }
+    rolling = true; document.getElementById('roll-btn').disabled = true;
+    const rImg = document.getElementById("rolling-img"), fImg = document.getElementById("final-img"), aura = document.getElementById("rarity-text");
+    fImg.style.display = "none"; aura.style.display = "none"; rImg.style.opacity = "0.5";
+    
+    let mBonus = (activeEquip === 'master' && Math.random() < 0.001) ? 1000 : 0;
+    let curLuck = activeBuffs.filter(b => b.luck).reduce((s, b) => s + b.luck, 0) + (activeEquip ? EQUIPS.find(e=>e.id===activeEquip).luck : 0) + mBonus + (godCharges > 0 ? 10000 : 0);
+    if (isLuckyEvent) curLuck *= 2;
+    
+    let shinyMulti = activeBuffs.filter(b => b.shinyMulti).reduce((max, b) => Math.max(max, b.shinyMulti), 1);
+    if(godCharges > 0) godCharges--;
+    
+    let highRarityFactor = 1 + (curLuck * 0.001); 
+    let lowRarityFactor = Math.max(0.1, 1 - (curLuck * 0.001)); 
+    
+    let roll = Math.random(), rarity = "Common";
+    if(roll < (1/80000000 * highRarityFactor)) rarity = "Secret";
+    else if(roll < (1/9000000 * highRarityFactor)) rarity = "Mythical";
+    else if(roll < (1/50000 * highRarityFactor)) rarity = "Legendary";
+    else if(roll < 0.15 * lowRarityFactor) rarity = "Epic";
+    else if(roll < 0.40 * lowRarityFactor) rarity = "Rare";
+    
+    let chosenId; let found = false;
+    while(!found) {
+        let poolId = (rarity==="Secret") ? SECRET_LIST[Math.floor(Math.random()*SECRET_LIST.length)] :
+                     (rarity==="Mythical") ? MYTHICAL_LIST[Math.floor(Math.random()*MYTHICAL_LIST.length)] :
+                     (rarity==="Legendary") ? LEGENDARY_LIST[Math.floor(Math.random()*LEGENDARY_LIST.length)] : Math.floor(Math.random()*898)+1;
+        try {
+            const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${poolId}`);
+            const data = await res.json();
+            const types = data.types.map(t => t.type.name);
+            const hasMatchingType = types.some(t => currentBiome.types.includes(t));
+            if (!hasMatchingType && Math.random() < 0.5) continue; 
+            chosenId = data; found = true;
+        } catch(e) { chosenId = null; found = true; }
+    }
+
+    if(chosenId) {
+        let isShiny = Math.random() < (0.01 * shinyMulti);
+        let finalSprite = isShiny ? chosenId.sprites.front_shiny : chosenId.sprites.front_default;
+        
+        if (rarity === "Mythical" || rarity === "Secret") await playCinematic(rarity);
+        else {
+            const start = Date.now();
+            while(Date.now() - start < 800) { 
+                rImg.src = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${Math.floor(Math.random()*898)+1}.png`;
+                await new Promise(r => setTimeout(r, 80));
+            }
+        }
+        aura.textContent = (isShiny ? "SHINY " : "") + rarity.toUpperCase();
+        aura.className = `rarity-${rarity}`; aura.style.display = "block";
+        fImg.src = finalSprite; fImg.style.display = "block";
+        if(isShiny) fImg.classList.add('shiny-glow');
+        rImg.style.opacity = "0.1";
+        
+        let gain = { "Common":10, "Rare":50, "Epic":150, "Legendary":5000, "Mythical":100000, "Secret":1000000 }[rarity];
+        if(isShiny) gain *= 10;
+        gems += gain;
+        if (!document.getElementById(`sell-${rarity}`)?.checked && inventory.length < maxSlots) inventory.unshift({ name: chosenId.name, img: finalSprite, rarity, isShiny });
+    }
+    totalRolls++; rolling = false; document.getElementById('roll-btn').disabled = false;
+    updateUI(); if(autoRollActive) setTimeout(startRoll, 500);
+}
+
+function buyItem(id) {
+    const it = ITEMS.find(x => x.id === id);
+    if(gems >= it.price) {
+        gems -= it.price;
+        if(it.charges) godCharges += it.charges;
+        else {
+            const existingBuff = activeBuffs.find(b => b.id === it.id);
+            if (existingBuff) existingBuff.end += it.dur * 1000;
+            else activeBuffs.push({ ...it, end: Date.now() + it.dur * 1000 });
+        }
+        updateUI();
+    }
+}
+
+function buyEquip(id) {
+    if (ownedEquips.includes(id)) {
+        activeEquip = id;
+        updateUI();
+        return;
+    }
+    const eq = EQUIPS.find(x => x.id === id);
+    if(gems >= eq.price) {
+        gems -= eq.price;
+        ownedEquips.push(id);
+        activeEquip = id;
+        updateUI();
+    }
+}
+
+async function playCinematic(rarity) {
+    const overlay = document.getElementById('cinematic-overlay'), ballImg = document.getElementById('cine-ball-img');
+    overlay.style.display = 'flex'; ballImg.style.display = 'block';
+    ballImg.src = (rarity === "Mythical") ? EQUIPS[2].img : EQUIPS[3].img;
+    sfxShake.currentTime = 0; sfxShake.play();
+    await new Promise(r => setTimeout(r, rarity === "Mythical" ? 3000 : 5000));
+    sfxShake.pause(); sfxReveal.play(); overlay.style.display = 'none';
+}
+
+function updateUI() {
+    document.getElementById("gem-count").textContent = gems.toLocaleString();
+    document.getElementById("slot-count").textContent = inventory.length;
+    document.getElementById("max-slot").textContent = maxSlots;
+    document.getElementById("total-rolls-stat").textContent = `Tổng Roll: ${totalRolls}`;
+    document.getElementById("slot-cost-text").textContent = slotCost;
+    document.getElementById("player-name-display").textContent = playerName;
+    if(totalRolls >= 200) document.getElementById('auto-btn').style.display = 'block';
+    
+    let cl = activeBuffs.filter(b => b.luck).reduce((s, b) => s + b.luck, 0) + (activeEquip ? EQUIPS.find(e=>e.id===activeEquip).luck : 0) + (godCharges > 0 ? 10000 : 0);
+    if (isLuckyEvent) cl *= 2;
+    document.getElementById("luck-stat").textContent = `Luck: ${cl}`;
+    let sMulti = activeBuffs.filter(b => b.shinyMulti).reduce((max, b) => Math.max(max, b.shinyMulti), 1);
+    document.getElementById("shiny-stat").textContent = `Shiny Multiplier: ${sMulti}x`;
+
+    const shop = document.getElementById('shop-content'); shop.innerHTML = "";
+    if(shopTab === 'items') {
+        ITEMS.forEach(it => { shop.innerHTML += `<div style="display:flex; justify-content:space-between; margin-bottom:5px; background:rgba(255,255,255,0.05); padding:8px; border-radius:8px;"><span style="font-size:0.7em"><b>${it.name}</b></span><button onclick="buyItem('${it.id}')" style="background:#2ecc71; border:none; color:white; padding:4px 8px; border-radius:4px; cursor:pointer;">${it.price.toLocaleString()}</button></div>`; });
+    } else {
+        EQUIPS.forEach(eq => { 
+            let btnText = eq.price.toLocaleString();
+            let btnColor = "#3498db";
+            if (ownedEquips.includes(eq.id)) {
+                btnText = (activeEquip === eq.id) ? "ĐANG DÙNG" : "SỬ DỤNG";
+                btnColor = (activeEquip === eq.id) ? "#e67e22" : "#2ecc71";
+            }
+            shop.innerHTML += `<div style="display:flex; justify-content:space-between; margin-bottom:5px; background:rgba(255,255,255,0.05); padding:8px; border-radius:8px;"><span style="font-size:0.7em"><b>${eq.name}</b></span><button onclick="buyEquip('${eq.id}')" style="background:${btnColor}; border:none; color:white; padding:4px 8px; border-radius:4px; cursor:pointer;">${btnText}</button></div>`; 
+        });
+    }
+    document.getElementById("inventory-grid").innerHTML = inventory.map((p, i) => `
+        <div class="slot ${p.isShiny ? 'shiny-slot' : ''}">
+            <button class="delete-btn" onclick="removeItem(${i})">X</button>
+            <img src="${p.img}" class="${p.isShiny ? 'shiny-glow' : ''}">
+            <div class="${p.isShiny ? 'shiny-text' : 'rarity-'+p.rarity}" style="font-size:0.6em;">
+                ${p.isShiny ? '✨ ' : ''}${p.name.toUpperCase()}
+            </div>
+        </div>`).join("");
+}
+
+function anyAutoSellChecked() { return ["Common", "Rare", "Epic", "Legendary"].some(r => document.getElementById(`sell-${r}`).checked); }
+function toggleAuto() { autoRollActive = !autoRollActive; document.getElementById('auto-btn').className = autoRollActive?'active':''; updateUI(); if(autoRollActive) startRoll(); }
+function upgradeSlots() { if(gems >= slotCost) { gems -= slotCost; maxSlots += 5; slotCost += 50; updateUI(); } }
+function removeItem(i) { inventory.splice(i, 1); updateUI(); }
+function switchTab(t) { shopTab = t; updateUI(); }
+
+function saveGame() {
+    const data = { 
+        inventory, gems, maxSlots, slotCost, activeEquip, ownedEquips, totalRolls, playerName 
+    };
+    localStorage.setItem('poke_rng_v1_nob', JSON.stringify(data));
+}
+
+function loadGame() {
+    const s = localStorage.getItem('poke_rng_v1_nob');
+    if(s) { 
+        const d = JSON.parse(s); 
+        inventory=d.inventory || []; gems=d.gems || 0; 
+        maxSlots=d.maxSlots || 20; slotCost=d.slotCost || 100; 
+        activeEquip=d.activeEquip || 'poke'; 
+        ownedEquips=d.ownedEquips || ['poke'];
+        totalRolls=d.totalRolls || 0; playerName = d.playerName || "";
+    }
+    if (!playerName) {
+        playerName = prompt("Chào mừng! Nhập tên HLV của bạn:", "HLV mới");
+        if (!playerName) playerName = "HLV_" + Math.floor(Math.random()*9999);
+        saveGame();
+    }
+}
+
+setInterval(() => { 
+    activeBuffs = activeBuffs.filter(b => b.end > Date.now()); 
+    const now = Date.now();
+    const remain = Math.max(0, biomeEndTime - now);
+    const m = Math.floor(remain/60000), s = Math.floor((remain%60000)/1000);
+    document.getElementById('biome-timer').textContent = `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+    if (remain <= 0) syncBiome();
+    checkLuckyEvent(); 
+    updateUI(); 
+}, 1000);
+
+setInterval(saveGame, 5000);
+syncBiome(); loadGame(); updateUI();
+</script>
+</body>
+</html>
